@@ -1,5 +1,5 @@
 import { db } from '@/config/db';
-import { courseTable } from '@/config/schema';
+import { coursesTable } from "@/config/schema";
 import { currentUser } from '@clerk/nextjs/server';
 import {
   GoogleGenAI,

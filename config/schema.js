@@ -1,5 +1,5 @@
 
-import { boolean, integer, json, pgTable, varchar, text,timestamp,jsonb,serial} from "drizzle-orm/pg-core";
+import { boolean, integer, json, pgTable, varchar, text,timestamp,jsonb,serial, } from "drizzle-orm/pg-core";
 
 
 
