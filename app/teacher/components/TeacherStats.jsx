@@ -25,6 +25,7 @@ export default function AnalyticsPage() {
     { name: "RL", value: 85 },
   ];
 
+
   // Filter logic
   const filteredData =
     selectedCourse === "All Courses"
@@ -35,10 +36,11 @@ export default function AnalyticsPage() {
     setOpenSection(openSection === section ? null : section);
   };
 
+
   const courses = ["All Courses", ...allData.map((d) => d.name)];
 
   return (
-   
+
     <div className="min-h-screen bg-[#0d1117] text-gray-200 p-6">
  <TeacherWelcome/>
       {/* Top Metrics */}
@@ -49,6 +51,7 @@ export default function AnalyticsPage() {
           { title: "Pending Assignments", value: "12", desc: "3 urgent deadlines", icon: "🗓️" },
           { title: "Average Quiz Score", value: "88%", desc: "Consistent performance", icon: "🎯" },
         ].map((item, index) => (
+
           <div
             key={index}
             className="bg-[#161b22] p-5 rounded-2xl shadow hover:shadow-lg hover:shadow-green-500/10 transition"
@@ -85,7 +88,6 @@ export default function AnalyticsPage() {
               ))}
             </select>
           </div>
-
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={filteredData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />

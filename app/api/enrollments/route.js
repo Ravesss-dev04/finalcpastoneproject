@@ -26,6 +26,8 @@ export async function GET(request) {
   }
 }
 
+
+
 // POST new enrollment request
 export async function POST(request) {
   try {

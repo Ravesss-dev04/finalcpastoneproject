@@ -152,9 +152,7 @@ const Page = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-green-500">Available Courses</h1>
-          <p className="text-gray-400">Request to manage courses - Admin approval required</p>
         </div>
-        
         <button
           onClick={() => {
             fetchTeacherCourses();

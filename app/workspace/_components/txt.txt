@@ -1,107 +1,545 @@
-'use client';
+import { db } from '@/config/db';
+import {
+  enrollmentsTable,
+  studentProgressTable,
+  lessonsTable
+} from '@/config/schema';
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  isNotNull
+} from 'drizzle-orm';
+import { NextResponse } from 'next/server';
+import { getAuth } from '@clerk/nextjs/server';
 
-import { Button } from "@/components/ui/button";
-import Image from "next/image";
-import { useState } from "react"
-import { IoTriangle } from "react-icons/io5";
-import { motion } from "framer-motion";
+export async function GET(request) {
+  try {
+    const { userId } = getAuth(request);
 
-export default function LandingHome({ setShowSignIn }) {
-  
-    const [showMobileOpen, setShowMobileOpen] = useState(false);
-    return (
-        <header className="flex flex-col items-center justify-between p-6">
-            <div className="flex items-center justify-between w-full mb-6">
-                <div className="flex items-center">
-                <Image
-                    src="/plmunlogo (2).png"
-                    alt="PLMun Logo"
-                    width={70}
-                    height={70}
-                />
-                <h1 className="text-green-300 font-semibold text-lg whitespace-nowrap ml-2">PLMun AI Tutor</h1>
-            </div>
-            <div className="hidden md:flex gap-2">
-                {/* Sign-in Button - STUDENT */}
-                <Button
-                    onClick={() => {
-                        try { localStorage.setItem('pendingRole', 'student'); } catch(e){}
-                        setShowSignIn('sign-in');
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
-                >
-                    Sign in
-                </Button>
-                {/* Sign-up Button - STUDENT */}
-                <Button
-                    onClick={() => {
-                        try { localStorage.setItem('pendingRole', 'student'); } catch(e){}
-                        setShowSignIn('sign-up');
-                    }}
-                    variant={"outline"}
-                    className={"bg-transparent border border-green-500 text-green-400 hover:bg-green-600 hover:text-white"}
-                >
-                    Sign up
-                </Button>
-            </div>
-        {/* Mobile Triangle Icon */}
-       <div className="flex md:hidden gap-2">
-            <button onClick={() => setShowMobileOpen(!showMobileOpen)}>
-                <IoTriangle size={30} className="text-green-400" />
-            </button>
-            {/* Mobile Menu */}
-            {showMobileOpen && (
-                <div className="absolute  right-6 top-16 bg-[#1d1f2b] p-4 rounded-md z-50 flex flex-col gap-2" >
-                    <Button
-                        onClick={() => {
-                            try { localStorage.setItem('pendingRole', 'student'); } catch(e){}
-                            setShowSignIn('sign-in');
-                            setShowMobileOpen(false);
-                        }}  
-                        className="bg-green-600 text-white"
-                    >
-                        Sign in
-                    </Button>
-                    <Button
-                        onClick={() => {
-                            try { localStorage.setItem('pendingRole', 'student'); } catch(e){}
-                            setShowSignIn('sign-up');
-                            setShowMobileOpen(false);
-                        }}
-                        variant="outline"
-                        className={"text-green-400 border border-green-400"}
-                    >
-                        Sign up
-                    </Button>
-                </div>
-            )}
-       </div>
-       </div>
-       {/* become a teacher */}
-       <div className="flex flex-col md:flex-row items-center justify-between flex-1 px-6 md:px-16 gap-8 mt-10">
-        <div className="flex-1 text-center md:text-left">
-            <h2 className="text-4xl md:text-5xl font-bold mb-5">Become a Fast Learner Through this Free Online Courses</h2>
-            <p className="text-gray-600 mb-6">Join a a teacher and create for student courses </p>
-            <button  onClick={() => {
-                // Mark that THIS signup flow should create a teacher
-                try { localStorage.setItem('pendingRole', 'teacher'); } catch(e){ /* ignore */ }
-                setShowSignIn('sign-up'); // open the SignUp modal (use sign-up so user enters new account)
-            }} className="bg-green-300 text-black hover:bg-green-700 hover:text-white rounded-md px-6 py-3 text-lg cursor-pointer">
-                        Become a Teacher
-                    </button>
-                </div>
-        <div className="relative flex-1">
-            
-            <Image
-                src="/plmun.png"
-                alt="plmunlogo"
-                width={320}
-                height={320}
-                className="mx-auto w-[350px] sm:w-[450px] md:w-[550px] lg:w-[650px] xl:w-[750px]"
-            />
-          
-        </div>
-       </div>
-        </header>
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get student's enrolled courses
+    const enrollments = await db
+      .select({
+        course_id: enrollmentsTable.course_id,
+        course_title: enrollmentsTable.course_title,
+        progress: enrollmentsTable.progress
+      })
+      .from(enrollmentsTable)
+      .where(eq(enrollmentsTable.student_id, userId));
+
+    if (!enrollments.length) {
+      return NextResponse.json({
+        subjectMastery: [],
+        weakAreas: [],
+        studyPattern: 'new_learner',
+        recommendedFocus: [],
+        totalCourses: 0,
+        averageMastery: 0
+      });
+    }
+
+    // Build full analytics
+    const subjectMastery = await Promise.all(
+      enrollments.map(async (enroll) => {
+        // Count total lessons in the course
+        const totalLessonsRows = await db
+          .select({ count: sql`count(*)` })
+          .from(lessonsTable)
+          .where(eq(lessonsTable.course_id, enroll.course_id));
+
+        const totalLessons = Number(totalLessonsRows[0]?.count || 0);
+
+        // Count completed lessons
+        const completedRows = await db
+          .select({ count: sql`count(*)` })
+          .from(studentProgressTable)
+          .where(
+            and(
+              eq(studentProgressTable.student_id, userId),
+              eq(studentProgressTable.course_id, enroll.course_id),
+              eq(studentProgressTable.completed, true),
+              isNotNull(studentProgressTable.lesson_id)   // FIXED!!!
+            )
+          );
+
+        const completedLessons = Number(completedRows[0]?.count || 0);
+
+        // Mastery %
+        const masteryPercent =
+          totalLessons > 0
+            ? Math.round((completedLessons / totalLessons) * 100)
+            : 0;
+
+        return {
+          title: enroll.course_title,
+          percent: masteryPercent,
+          completed: completedLessons,
+          total: totalLessons
+        };
+      })
     );
+
+    // Weak areas (<70%)
+    const weakAreas = subjectMastery
+      .filter((s) => s.percent < 70)
+      .map((s) => s.title);
+
+    // Study Pattern
+    const recentProgress = await db
+      .select({ submitted_at: studentProgressTable.submitted_at })
+      .from(studentProgressTable)
+      .where(
+        and(
+          eq(studentProgressTable.student_id, userId),
+          eq(studentProgressTable.completed, true)
+        )
+      )
+      .orderBy(desc(studentProgressTable.submitted_at))
+      .limit(10);
+
+    const studyPattern = analyzeStudyPattern(recentProgress);
+
+    // Recommendations
+    const recommendedFocus = generateFocusRecommendations(
+      weakAreas,
+      subjectMastery
+    );
+
+    // Final analytics response
+    const analyticsData = {
+      subjectMastery,
+      weakAreas,
+      studyPattern,
+      recommendedFocus,
+      totalCourses: enrollments.length,
+      averageMastery:
+        subjectMastery.length > 0
+          ? Math.round(
+              subjectMastery.reduce((a, b) => a + b.percent, 0) /
+                subjectMastery.length
+            )
+          : 0
+    };
+
+    return NextResponse.json(analyticsData);
+  } catch (error) {
+    console.error('Error fetching student analytics:', error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
 }
+
+// ------------------------------
+//  Helper Functions
+// ------------------------------
+
+function analyzeStudyPattern(recent) {
+  if (!recent || recent.length === 0) return 'new_learner';
+
+  const dates = recent.map((r) => new Date(r.submitted_at));
+
+  const diffMs = dates[0] - dates[dates.length - 1];
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  if (diffDays < 3) return 'consistent';
+  if (diffDays < 7) return 'moderate';
+  return 'irregular';
+}
+
+function generateFocusRecommendations(weakAreas, mastery) {
+  const rec = [...weakAreas.slice(0, 2)];
+
+  const subjects = mastery.map((s) => s.title);
+
+  if (subjects.includes('Python Basics')) rec.push('Python Functions');
+  if (subjects.includes('HTML/CSS - Web development')) rec.push('CSS Flexbox');
+  if (subjects.includes('Data Structure')) rec.push('Algorithms');
+
+  return [...new Set(rec)].slice(0, 3);
+}
+
+
+
+
+
+
+
+
+STUDENT ANALYTICS API 
+
+
+
+import { db } from '@/config/db';
+import {
+  enrollmentsTable,
+  studentProgressTable,
+  lessonsTable
+} from '@/config/schema';
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  isNotNull
+} from 'drizzle-orm';
+import { NextResponse } from 'next/server';
+import { getAuth } from '@clerk/nextjs/server';
+
+export async function GET(request) {
+  try {
+    const { userId } = getAuth(request);
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get student's enrolled courses
+    const enrollments = await db
+      .select({
+        course_id: enrollmentsTable.course_id,
+        course_title: enrollmentsTable.course_title,
+        progress: enrollmentsTable.progress
+      })
+      .from(enrollmentsTable)
+      .where(eq(enrollmentsTable.student_id, userId));
+
+    if (!enrollments.length) {
+      return NextResponse.json({
+        subjectMastery: [],
+        weakAreas: [],
+        studyPattern: 'new_learner',
+        recommendedFocus: [],
+        totalCourses: 0,
+        averageMastery: 0
+      });
+    }
+
+    // Build full analytics
+    const subjectMastery = await Promise.all(
+      enrollments.map(async (enroll) => {
+        // Count total lessons in the course
+        const totalLessonsRows = await db
+          .select({ count: sql`count(*)` })
+          .from(lessonsTable)
+          .where(eq(lessonsTable.course_id, enroll.course_id));
+
+        const totalLessons = Number(totalLessonsRows[0]?.count || 0);
+
+        // Count completed lessons
+        const completedRows = await db
+          .select({ count: sql`count(*)` })
+          .from(studentProgressTable)
+          .where(
+            and(
+              eq(studentProgressTable.student_id, userId),
+              eq(studentProgressTable.course_id, enroll.course_id),
+              eq(studentProgressTable.completed, true),
+              isNotNull(studentProgressTable.lesson_id)   // FIXED!!!
+            )
+          );
+
+        const completedLessons = Number(completedRows[0]?.count || 0);
+
+        // Mastery %
+        const masteryPercent =
+          totalLessons > 0
+            ? Math.round((completedLessons / totalLessons) * 100)
+            : 0;
+
+        return {
+          title: enroll.course_title,
+          percent: masteryPercent,
+          completed: completedLessons,
+          total: totalLessons
+        };
+      })
+    );
+
+    // Weak areas (<70%)
+    const weakAreas = subjectMastery
+      .filter((s) => s.percent < 70)
+      .map((s) => s.title);
+
+    // Study Pattern
+    const recentProgress = await db
+      .select({ submitted_at: studentProgressTable.submitted_at })
+      .from(studentProgressTable)
+      .where(
+        and(
+          eq(studentProgressTable.student_id, userId),
+          eq(studentProgressTable.completed, true)
+        )
+      )
+      .orderBy(desc(studentProgressTable.submitted_at))
+      .limit(10);
+
+    const studyPattern = analyzeStudyPattern(recentProgress);
+
+    // Recommendations
+    const recommendedFocus = generateFocusRecommendations(
+      weakAreas,
+      subjectMastery
+    );
+
+    // Final analytics response
+    const analyticsData = {
+      subjectMastery,
+      weakAreas,
+      studyPattern,
+      recommendedFocus,
+      totalCourses: enrollments.length,
+      averageMastery:
+        subjectMastery.length > 0
+          ? Math.round(
+              subjectMastery.reduce((a, b) => a + b.percent, 0) /
+                subjectMastery.length
+            )
+          : 0
+    };
+
+    return NextResponse.json(analyticsData);
+  } catch (error) {
+    console.error('Error fetching student analytics:', error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+function analyzeStudyPattern(recent) {
+  if (!recent || recent.length === 0) return 'new_learner';
+
+  const dates = recent.map((r) => new Date(r.submitted_at));
+
+  const diffMs = dates[0] - dates[dates.length - 1];
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  if (diffDays < 3) return 'consistent';
+  if (diffDays < 7) return 'moderate';
+  return 'irregular';
+}
+
+
+
+function generateFocusRecommendations(weakAreas, mastery) {
+  const rec = [...weakAreas.slice(0, 2)];
+
+  const subjects = mastery.map((s) => s.title);
+
+  if (subjects.includes('Python Basics')) rec.push('Python Functions');
+  if (subjects.includes('HTML/CSS - Web development')) rec.push('CSS Flexbox');
+  if (subjects.includes('Data Structure')) rec.push('Algorithms');
+
+  return [...new Set(rec)].slice(0, 3);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------
+
+'use client';
+import React, { useState, useEffect } from 'react';
+import { useUser } from '@clerk/nextjs';
+import { Brain, Target, Clock, BookOpen, CheckCircle } from 'lucide-react';
+
+const StudyPlanList = () => {
+  const { user } = useUser();
+  const [studyPlan, setStudyPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [currentWeek, setCurrentWeek] = useState([]);
+  const [completedTasks, setCompletedTasks] = useState({}); // Track completed tasks
+
+  useEffect(() => {
+    generateCurrentWeek();
+  }, []);
+
+  const generateCurrentWeek = () => {
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 = Sunday
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - currentDay + 1); // Start week from Monday
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      week.push({
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        date: date.getDate(),
+        fullDate: date.toISOString().split('T')[0],
+        isToday: date.toDateString() === today.toDateString(),
+        tasks: []
+      });
+    }
+    setCurrentWeek(week);
+  };
+
+  const generateStudyPlan = async () => {
+    setLoading(true);
+    try {
+      // Fake analytics for testing
+      const analyticsData = {
+        subjectMastery: [
+          { title: 'Python Basics', percent: 50 },
+          { title: 'HTML/CSS', percent: 80 },
+          { title: 'Data Structure', percent: 40 },
+        ],
+        weakAreas: ['Python Basics', 'Data Structure'],
+        recommendedFocus: ['Python Functions', 'CSS Flexbox'],
+      };
+
+      const prompt = `
+        Create a study plan for the week based on this student analytics:
+        ${JSON.stringify(analyticsData, null, 2)}
+        Today's date: ${new Date().toLocaleDateString()}
+        Include:
+        - AI recommendation (1-2 sentences)
+        - 3-5 focus areas
+        - 7-day schedule with tasks
+        - Return JSON exactly as: {
+          "recommendation":"string",
+          "focusAreas":["topic1","topic2"],
+          "weeklySchedule":[
+            {"day":"Monday","tasks":["task1","task2"]},
+            {"day":"Tuesday","tasks":[]}
+          ]
+        }
+      `;
+
+      const aiResponse = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, mode: 'analyzer' }),
+      });
+
+      const aiData = await aiResponse.json();
+      let planData;
+      try {
+        planData = JSON.parse(aiData.text);
+      } catch {
+        planData = {
+          recommendation: 'Focus on weak areas this week.',
+          focusAreas: analyticsData.weakAreas,
+          weeklySchedule: currentWeek.map(d => ({ day: d.day, tasks: [] }))
+        };
+      }
+      setStudyPlan(planData);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTask = (day, task) => {
+    setCompletedTasks(prev => {
+      const dayTasks = prev[day] || [];
+      return {
+        ...prev,
+        [day]: dayTasks.includes(task)
+          ? dayTasks.filter(t => t !== task)
+          : [...dayTasks, task]
+      };
+    });
+  };
+
+  const getWeekRange = () => {
+    if (!currentWeek.length) return '';
+    const start = currentWeek[0];
+    const end = currentWeek[6];
+    return `${start.day} ${start.date} – ${end.day} ${end.date}`;
+  };
+
+  if (loading) return <div className="bg-[#161B22] text-white min-h-screen p-6">Loading...</div>;
+
+  return (
+    <div className="bg-[#161B22] text-white min-h-screen p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold uppercase">Study Plan</h2>
+        <span className="text-sm text-gray-300">{getWeekRange()}</span>
+      </div>
+
+      {/* Recommendation */}
+      <div className="bg-[#111827] border border-green-700 text-green-400 p-4 mb-6 rounded">
+        <div className="flex items-center gap-2 mb-2">
+          <Brain size={16} className="text-green-500" />
+          <p className="text-sm font-medium">AI Recommendation</p>
+        </div>
+        <p className="text-green-300 text-sm">{studyPlan?.recommendation}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {studyPlan?.focusAreas?.map((area, idx) => (
+            <span key={idx} className="bg-green-900 text-green-300 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+              <Target size={12} /> {area}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Weekly Schedule */}
+      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        {currentWeek.map((dayItem, idx) => {
+          const daySchedule = studyPlan?.weeklySchedule?.find(s =>
+            s.day.toLowerCase().includes(dayItem.day.toLowerCase())
+          ) || { tasks: [] };
+
+          return (
+            <div key={idx} className={`rounded-lg p-4 border ${dayItem.isToday ? 'border-green-500' : 'border-gray-700'} bg-[#1f2937]`}>
+              <div className="flex justify-between mb-2">
+                <h3 className="font-medium">{dayItem.day}</h3>
+                <span className="text-sm text-gray-400">{dayItem.date}</span>
+              </div>
+
+              {daySchedule.tasks.length ? (
+                <div className="space-y-2">
+                  {daySchedule.tasks.map((task, tIdx) => (
+                    <div
+                      key={tIdx}
+                      onClick={() => toggleTask(dayItem.day, task)}
+                      className={`cursor-pointer bg-green-900 text-green-300 text-xs p-2 rounded flex items-start gap-2 ${completedTasks[dayItem.day]?.includes(task) ? 'line-through opacity-50' : ''}`}
+                    >
+                      <BookOpen size={12} />
+                      {task}
+                      {completedTasks[dayItem.day]?.includes(task) && <CheckCircle size={14} className="ml-auto text-green-400" />}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <Clock size={20} className="mx-auto text-gray-500 mb-2" />
+                  <p className="text-xs text-gray-500 italic">No tasks scheduled</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* Generate Button */}
+      <div className="mt-6 flex justify-center">
+        <button
+          onClick={generateStudyPlan}
+          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg flex items-center gap-2"
+        >
+          <Brain size={16} /> Regenerate Study Plan
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default StudyPlanList;

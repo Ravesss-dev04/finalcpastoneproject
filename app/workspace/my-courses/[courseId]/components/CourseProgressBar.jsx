@@ -2,33 +2,38 @@
 import { useState, useEffect } from "react";
 import { CheckCircle, FileText, ListCheck } from "lucide-react";
 
-export default function CourseProgressBar({ courseId, lessonsCount, quizzesCount, assignmentsCount }) {
-  const [progress, setProgress] = useState({
+export default function CourseProgressBar({ courseId, lessonsCount, quizzesCount, assignmentsCount, studentProgress }) {
+  
+  const progress = studentProgress || {
     lessonsCompleted: 0,
     quizzesCompleted: 0,
     assignmentsSubmitted: 0
-  });
-
-  useEffect(() => {
-    fetchProgress();
-  }, [courseId]);
-
-  const fetchProgress = async () => {
-    try {
-      const response = await fetch(`/api/courses/${courseId}/progress`);
-      if (response.ok) {
-        const progressData = await response.json();
-        setProgress(progressData);
-      }
-    } catch (error) {
-      console.error('Error fetching progress:', error);
-    }
   };
 
+  const overallProgress = lessonsCount > 0 
+    ? Math.round((progress.lessonsCompleted / lessonsCount) * 100) 
+    : 0;
+
   return (
-    <div className="bg-[#1a1d24] p-10 rounded-lg space-y-4 shadow-md">
+    <div className="bg-[#1a1d24] p-6 rounded-lg space-y-4 shadow-md">
       <h2 className="text-lg font-bold text-white mb-4">Course Progress</h2>
-      <ul className="text-sm space-y-2 text-white">
+      
+      {/* Overall Progress */}
+      <div className="mb-4">
+        <div className="flex justify-between text-sm text-gray-300 mb-2">
+          <span>Overall Progress</span>
+          <span>{overallProgress}%</span>
+        </div>
+        <div className="w-full bg-gray-700 rounded-full h-2">
+          <div 
+            className="bg-green-500 h-2 rounded-full transition-all duration-300" 
+            style={{ width: `${overallProgress}%` }}
+          ></div>
+        </div>
+      </div>
+
+      {/* Detailed Progress */}
+      <ul className="text-sm space-y-3 text-white">
         <li className="flex items-center gap-2">
           <CheckCircle className="text-green-400 w-4 h-4"/>
           <span>{progress.lessonsCompleted}/{lessonsCount} Lessons Viewed</span>

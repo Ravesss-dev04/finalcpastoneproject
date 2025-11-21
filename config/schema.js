@@ -67,6 +67,7 @@ export const courseRequestsTable = pgTable("course_requests", {
 
 
 
+
 export const teachersTable = pgTable("teachers", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -108,6 +109,7 @@ export const lessonsTable = pgTable('lessons', {
   updated_at: timestamp('updated_at').defaultNow(),
 });
 
+
 export const quizzesTable = pgTable('quizzes', {
   id: serial('id').primaryKey(),
   course_id: integer('course_id').notNull().references(() => coursesTable.id),
@@ -117,6 +119,9 @@ export const quizzesTable = pgTable('quizzes', {
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 });
+
+
+
 
 export const assignmentsTable = pgTable('assignments', {
   id: serial('id').primaryKey(),
@@ -147,5 +152,19 @@ export const studentProgressTable = pgTable('student_progress', {
   completed: boolean('completed').default(false),
   score: integer('score'),
   submitted_at: timestamp('submitted_at'),
+  created_at: timestamp('created_at').defaultNow(),
+});
+
+
+
+// Add to your schema.js
+export const studentNotificationsTable = pgTable('student_notifications', {
+  id: serial('id').primaryKey(),
+  student_id: varchar('student_id', { length: 255 }).notNull(),
+  course_id: integer('course_id').references(() => coursesTable.id),
+  teacher_name: varchar('teacher_name', { length: 255 }),
+  message: text('message').notNull(),
+  type: varchar('type', { length: 50 }).default('new_lesson'), // new_lesson, announcement, quiz, etc.
+  is_read: boolean('is_read').default(false),
   created_at: timestamp('created_at').defaultNow(),
 });

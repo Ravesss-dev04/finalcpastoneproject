@@ -178,9 +178,9 @@ function CourseList() {
           const isRejected = course.enrollment_status === 'rejected';
           
           return (
-            <div key={course.id} className='bg-[#13181F] rounded-lg shadow-md p-6 border border-gray-800 hover:border-green-500 transition-all duration-300'>
+            <div key={course.id} className='bg-[#13181F] rounded-lg shadow-md w-full p-6 border border-gray-800 hover:border-green-500 transition-all duration-300 max-w-md mx-auto'>
               {/* Course Header */}
-              <div className='flex justify-between items-start mb-4'>
+              <div className='flex justify-between items-start mb-4 gap-3 flex-wrap'>
                 <div className="flex-1">
                   <h3 className='text-xl font-bold text-gray-300 mb-2 line-clamp-2'>
                     {course.title}

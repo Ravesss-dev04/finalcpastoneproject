@@ -1,28 +1,88 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
 export async function POST(req) {
   try {
-    const { prompt } = await req.json();
+    const { prompt, mode } = await req.json();
 
-    if (!prompt) {
-      return Response.json({ error: "No prompt provided" }, { status: 400 });
+    if (!prompt || !mode)
+      return Response.json({ error: "Missing prompt or mode" }, { status: 400 });
+
+    // Use only available models on OpenRouter
+    const MODEL_MAP = {
+      chatbot: "meta-llama/llama-3.1-8b-instruct",
+      analyzer: "meta-llama/llama-3.1-8b-instruct", // Changed from unavailable model
+      lesson: "meta-llama/llama-3.1-8b-instruct",
+      quiz: "meta-llama/llama-3.1-8b-instruct", // Changed from unavailable model
+      study_plan: "meta-llama/llama-3.1-8b-instruct", // Use reliable model
+    };
+
+    const model = MODEL_MAP[mode] || "meta-llama/llama-3.1-8b-instruct";
+
+    // Enhanced system prompt for study plans
+    let systemPrompt = "You are an AI tutor assistant.";
+    if (mode === 'study_plan') {
+      systemPrompt = `You are an AI study planner. You MUST respond with ONLY valid JSON format. 
+      Do not include any explanations, comments, or text outside the JSON structure. 
+      Your response must be directly parseable by JSON.parse().
+      
+      Required JSON format:
+      {
+        "recommendation": "1-2 sentences of study advice",
+        "focusAreas": ["area1", "area2", "area3"],
+        "weeklySchedule": [
+          {"day": "Mon", "tasks": ["task1", "task2"]},
+          {"day": "Tue", "tasks": ["task1", "task2"]},
+          {"day": "Wed", "tasks": ["task1"]},
+          {"day": "Thu", "tasks": ["task1", "task2"]},
+          {"day": "Fri", "tasks": ["review task"]},
+          {"day": "Sat", "tasks": []},
+          {"day": "Sun", "tasks": ["weekly review"]}
+        ]
+      }`;
     }
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXTAUTH_URL || "http://localhost:3000",
+        "X-Title": "AI Tutor App"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { 
+            role: "system", 
+            content: systemPrompt 
+          },
+          { 
+            role: "user", 
+            content: prompt 
+          }
+        ],
+        max_tokens: 1024,
+        temperature: mode === 'study_plan' ? 0.3 : 0.7
+      })
+    });
 
-    const result = await model.generateContent(prompt);
-    const response = result.response.text();
-    
-    return Response.json({ text: response });
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    return Response.json(
-      { error: "Failed to generate response" },
-      { status: 500 }
-    );
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("OpenRouter Failure:", data);
+      return Response.json({ 
+        error: "AI service unavailable. Using fallback response.",
+        details: data.error.message 
+      }, { status: 500 });
+    }
+
+    const text = data.choices?.[0]?.message?.content || "No response from AI";
+
+    return Response.json({ text });
+
+  } catch (err) {
+    console.error("AI Error:", err);
+    return Response.json({ 
+      error: "Server failure",
+      details: err.message 
+    }, { status: 500 });
   }
 }
-
-
-

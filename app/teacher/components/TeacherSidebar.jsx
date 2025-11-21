@@ -62,11 +62,7 @@ function TeacherSidebar() {
   const { toggle } = useSidebar();
   const pathname = usePathname();
 
-  const handleLinkClick = () => {
-    if (window.innerWidth < 768) {
-      toggle();
-    }
-  };
+  
 
   const isActive = (path) => {
     if (path === '/teacher') {
@@ -100,7 +96,7 @@ function TeacherSidebar() {
                   <SidebarMenuButton asChild className={'p-5'}>
                     <Link 
                       href={item.path} 
-                      onClick={handleLinkClick}
+                    
                       className={`text-[15px] text-white transition-colors hover:text-green-400 ${
                         isActive(item.path) ? 'text-green-400 bg-[#161B22]' : ''
                       }`}
